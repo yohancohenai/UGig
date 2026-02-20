@@ -29,7 +29,14 @@
       "bundler": "metro"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.ugig",
+          "enableGooglePay": true
+        }
+      ]
     ]
   }
 }

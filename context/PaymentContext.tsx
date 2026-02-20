@@ -4,26 +4,25 @@ import type { Gig, Payment, PaymentStatus } from '../constants/MockData';
 import { PLATFORM_FEE_PERCENT, formatCents } from '../constants/MockData';
 
 interface PaymentContextValue {
-  /** Get the payment for a gig (from mock state) */
   getPayment: (gigId: string) => Payment | undefined;
-  /** Poster submits payment → moves to in_escrow (shows Alert) */
-  submitPayment: (gig: Gig, amountCents: number) => void;
-  /** Create escrow payment silently (no Alert, for programmatic use) */
+  /** Poster funds gig escrow via Stripe — stores paymentIntentId */
+  fundGigEscrow: (gigId: string, amountCents: number, paymentIntentId: string) => Payment;
+  /** Release escrow (poster confirms or auto-release) */
+  releaseEscrow: (gig: Gig) => void;
+  /** Refund escrow (dispute resolution) */
+  refundEscrow: (gig: Gig) => void;
+  /** @deprecated Use fundGigEscrow instead */
   createEscrowPayment: (gigId: string, amountCents: number) => Payment;
-  /** Poster marks gig complete → releases payment */
+  /** @deprecated Use releaseEscrow instead */
   releasePayment: (gig: Gig) => void;
-  /** All mock payments */
   payments: Payment[];
-  /** Total earned (released) in cents */
   totalEarnedCents: number;
-  /** Total in escrow in cents */
   totalEscrowCents: number;
 }
 
 const PaymentContext = createContext<PaymentContextValue | null>(null);
 
 export function PaymentProvider({ children }: { children: React.ReactNode }) {
-  // Seed with mock payments from accepted/completed gigs
   const [payments, setPayments] = useState<Payment[]>([
     {
       id: 'pay_1',
@@ -43,6 +42,16 @@ export function PaymentProvider({ children }: { children: React.ReactNode }) {
       status: 'released',
       createdAt: '2026-02-08',
     },
+    {
+      id: 'pay_3',
+      gigId: '15',
+      amountCents: 1800,
+      serviceFeeCents: 180,
+      netPayoutCents: 1620,
+      status: 'in_escrow',
+      paymentIntentId: 'pi_mock_15',
+      createdAt: '2026-02-17',
+    },
   ]);
 
   const getPayment = useCallback(
@@ -50,6 +59,44 @@ export function PaymentProvider({ children }: { children: React.ReactNode }) {
     [payments]
   );
 
+  const fundGigEscrow = useCallback((gigId: string, amountCents: number, paymentIntentId: string): Payment => {
+    const serviceFeeCents = Math.round(amountCents * PLATFORM_FEE_PERCENT / 100);
+    const netPayoutCents = amountCents - serviceFeeCents;
+    const newPayment: Payment = {
+      id: `pay_${Date.now()}`,
+      gigId,
+      amountCents,
+      serviceFeeCents,
+      netPayoutCents,
+      status: 'in_escrow',
+      paymentIntentId,
+      createdAt: new Date().toISOString().split('T')[0],
+    };
+    setPayments(prev => [...prev, newPayment]);
+    return newPayment;
+  }, []);
+
+  const releaseEscrow = useCallback((gig: Gig) => {
+    setPayments(prev =>
+      prev.map(p =>
+        p.gigId === gig.id && p.status === 'in_escrow'
+          ? { ...p, status: 'released' as PaymentStatus }
+          : p
+      )
+    );
+  }, []);
+
+  const refundEscrow = useCallback((gig: Gig) => {
+    setPayments(prev =>
+      prev.map(p =>
+        p.gigId === gig.id && p.status === 'in_escrow'
+          ? { ...p, status: 'refunded' as PaymentStatus }
+          : p
+      )
+    );
+  }, []);
+
+  // Legacy methods kept for backward compat
   const createEscrowPayment = useCallback((gigId: string, amountCents: number): Payment => {
     const serviceFeeCents = Math.round(amountCents * PLATFORM_FEE_PERCENT / 100);
     const netPayoutCents = amountCents - serviceFeeCents;
@@ -64,25 +111,6 @@ export function PaymentProvider({ children }: { children: React.ReactNode }) {
     };
     setPayments(prev => [...prev, newPayment]);
     return newPayment;
-  }, []);
-
-  const submitPayment = useCallback((gig: Gig, amountCents: number) => {
-    const serviceFeeCents = Math.round(amountCents * PLATFORM_FEE_PERCENT / 100);
-    const netPayoutCents = amountCents - serviceFeeCents;
-    const newPayment: Payment = {
-      id: `pay_${Date.now()}`,
-      gigId: gig.id,
-      amountCents,
-      serviceFeeCents,
-      netPayoutCents,
-      status: 'in_escrow',
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-    setPayments(prev => [...prev, newPayment]);
-    Alert.alert(
-      'Payment Submitted',
-      `${formatCents(amountCents)} is now held in escrow. It will be released when you mark the job as complete.`
-    );
   }, []);
 
   const releasePayment = useCallback((gig: Gig) => {
@@ -112,8 +140,14 @@ export function PaymentProvider({ children }: { children: React.ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ getPayment, submitPayment, createEscrowPayment, releasePayment, payments, totalEarnedCents, totalEscrowCents }),
-    [getPayment, submitPayment, createEscrowPayment, releasePayment, payments, totalEarnedCents, totalEscrowCents]
+    () => ({
+      getPayment, fundGigEscrow, releaseEscrow, refundEscrow,
+      createEscrowPayment, releasePayment,
+      payments, totalEarnedCents, totalEscrowCents,
+    }),
+    [getPayment, fundGigEscrow, releaseEscrow, refundEscrow,
+     createEscrowPayment, releasePayment,
+     payments, totalEarnedCents, totalEscrowCents]
   );
 
   return (

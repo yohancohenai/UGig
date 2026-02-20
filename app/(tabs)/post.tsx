@@ -1,18 +1,23 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, Alert, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../context/ThemeContext';
 import { useUser } from '../../context/UserContext';
+import { usePayment } from '../../context/PaymentContext';
 import { useNotification } from '../../context/NotificationContext';
 import { useVerification } from '../../context/VerificationContext';
+import { useStripePayment } from '../../hooks/useStripePayment';
+import { parsePayToCents, formatCents } from '../../constants/MockData';
 import VerificationBanner from '../../components/VerificationBanner';
 
 export default function PostGigScreen() {
   const { colors, isDark } = useTheme();
-  const { college, user, addGig } = useUser();
+  const { college, user, addGig, updateGig } = useUser();
+  const { fundGigEscrow } = usePayment();
   const { addNotification } = useNotification();
   const { canPerformActions } = useVerification();
+  const { pay: stripePay, loading: stripeLoading } = useStripePayment();
   const router = useRouter();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -20,9 +25,10 @@ export default function PostGigScreen() {
   const [location, setLocation] = useState('');
 
   const canSubmit = title.trim() && description.trim() && pay.trim() && location.trim();
+  const amountCents = pay.trim() ? parsePayToCents(pay) : 0;
 
-  const handleSubmit = () => {
-    if (!canSubmit || !college) return;
+  const handleSubmit = async () => {
+    if (!canSubmit || !college || stripeLoading) return;
     if (!canPerformActions) {
       Alert.alert(
         'Verification Required',
@@ -35,6 +41,15 @@ export default function PostGigScreen() {
       return;
     }
 
+    // 1. Stripe payment — poster must pay before gig is published
+    const result = await stripePay({
+      gigId: `new_${Date.now()}`,
+      amountCents,
+      posterId: user.id,
+    });
+    if (!result.success || !result.paymentIntentId) return;
+
+    // 2. Create the gig with escrow data
     const gigId = addGig({
       collegeId: college.id,
       title: title.trim(),
@@ -43,20 +58,29 @@ export default function PostGigScreen() {
       location: location.trim(),
       status: 'open',
       posterName: user.name,
+      posterId: user.id,
       posterSchool: college.name,
+      escrowStatus: 'in_escrow',
+      paymentIntentId: result.paymentIntentId,
+      completionStatus: 'not_started',
+      disputeStatus: 'none',
       createdAt: new Date().toISOString().split('T')[0],
     });
+
+    // 3. Register payment and attach to gig
+    const payment = fundGigEscrow(gigId, amountCents, result.paymentIntentId);
+    updateGig(gigId, { payment });
 
     addNotification({
       type: 'new_gig',
       title: 'New Gig Posted!',
-      message: `Your gig "${title.trim()}" has been posted to ${college.name}. Students can now find and accept it.`,
+      message: `Your gig "${title.trim()}" has been posted to ${college.name}. ${formatCents(amountCents)} is held in escrow.`,
       gigId,
     });
 
     Alert.alert(
       'Gig Posted!',
-      `"${title}" has been posted to ${college.name}. Students can now find and accept your gig.`,
+      `"${title}" has been posted to ${college.name}. ${formatCents(amountCents)} is held in escrow until the job is completed.`,
       [{
         text: 'OK',
         onPress: () => {
@@ -183,27 +207,35 @@ export default function PostGigScreen() {
         {/* Submit */}
         <Pressable
           onPress={handleSubmit}
-          disabled={!canSubmit}
+          disabled={!canSubmit || stripeLoading}
           style={({ pressed }) => [
             styles.submitBtn,
             {
               backgroundColor: canSubmit ? colors.primary : colors.borderLight,
-              opacity: pressed && canSubmit ? 0.85 : 1,
+              opacity: (pressed && canSubmit && !stripeLoading) ? 0.85 : stripeLoading ? 0.6 : 1,
             },
           ]}
         >
-          <Ionicons
-            name="paper-plane"
-            size={18}
-            color={canSubmit ? (isDark ? '#0f1117' : '#fff') : colors.textSecondary}
-          />
+          {stripeLoading ? (
+            <ActivityIndicator size="small" color={isDark ? '#0f1117' : '#fff'} />
+          ) : (
+            <Ionicons
+              name="card-outline"
+              size={18}
+              color={canSubmit ? (isDark ? '#0f1117' : '#fff') : colors.textSecondary}
+            />
+          )}
           <Text
             style={[
               styles.submitBtnText,
               { color: canSubmit ? (isDark ? '#0f1117' : '#fff') : colors.textSecondary },
             ]}
           >
-            Post Gig
+            {stripeLoading
+              ? 'Processing...'
+              : canSubmit && amountCents > 0
+                ? `Post & Pay — ${formatCents(amountCents)}`
+                : 'Post Gig'}
           </Text>
         </Pressable>
       </ScrollView>

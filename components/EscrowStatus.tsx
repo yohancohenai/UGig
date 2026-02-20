@@ -10,7 +10,8 @@ interface EscrowStatusProps {
   showBreakdown?: boolean;
 }
 
-const STATUS_CONFIG: Record<PaymentStatus, { label: string; icon: string; colorKey: 'warning' | 'success' | 'textSecondary' | 'danger' }> = {
+const STATUS_CONFIG: Record<string, { label: string; icon: string; colorKey: 'warning' | 'success' | 'textSecondary' | 'danger' }> = {
+  unfunded: { label: 'Awaiting Funding', icon: 'wallet-outline', colorKey: 'textSecondary' },
   pending: { label: 'Payment Pending', icon: 'time-outline', colorKey: 'textSecondary' },
   in_escrow: { label: 'In Escrow', icon: 'lock-closed-outline', colorKey: 'warning' },
   released: { label: 'Released', icon: 'checkmark-circle-outline', colorKey: 'success' },

@@ -2,6 +2,7 @@ import { View, Text, StyleSheet, Pressable, ScrollView, Modal } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useReview } from '../context/ReviewContext';
+import { CURRENT_USER, parsePayToCents } from '../constants/MockData';
 import type { Gig } from '../constants/MockData';
 import EscrowStatus, { PaymentBadge } from './EscrowStatus';
 import ReviewCard from './ReviewCard';
@@ -12,12 +13,26 @@ interface GigDetailModalProps {
   onClose: () => void;
   onAccept?: () => void;
   onComplete?: () => void;
+  onConfirm?: () => void;
+  onDispute?: () => void;
+  autoReleaseSeconds?: number | null;
 }
 
-export default function GigDetailModal({ gig, visible, onClose, onAccept, onComplete }: GigDetailModalProps) {
+export default function GigDetailModal({
+  gig, visible, onClose, onAccept, onComplete,
+  onConfirm, onDispute, autoReleaseSeconds,
+}: GigDetailModalProps) {
   const { colors, isDark } = useTheme();
 
   if (!gig) return null;
+
+  // Role detection
+  const isPoster = gig.posterId === CURRENT_USER.id;
+  const isWorker = gig.acceptedById === CURRENT_USER.id;
+  const isPendingConfirmation = gig.completionStatus === 'pending_confirmation';
+  const isDisputed = gig.disputeStatus === 'disputed';
+  const isOpen = gig.status === 'open';
+  const amountCents = parsePayToCents(gig.pay);
 
   const statusColors: Record<string, { bg: string; text: string; label: string }> = {
     open: { bg: colors.successLight, text: colors.success, label: 'OPEN' },
@@ -26,7 +41,6 @@ export default function GigDetailModal({ gig, visible, onClose, onAccept, onComp
     completed: { bg: colors.primaryLight, text: colors.primary, label: 'COMPLETED' },
   };
   const sc = statusColors[gig.status] ?? statusColors.open;
-  const isOpen = gig.status === 'open';
 
   return (
     <Modal
@@ -70,20 +84,41 @@ export default function GigDetailModal({ gig, visible, onClose, onAccept, onComp
             <InfoRow icon="calendar-outline" label="Posted" value={gig.createdAt} />
           </View>
 
-          {gig.status === 'pending' && (
-            <View style={[styles.acceptedBanner, { backgroundColor: '#fef3c7' }]}>
-              <Ionicons name="hourglass-outline" size={18} color="#d97706" />
-              <Text style={[styles.acceptedBannerText, { color: '#d97706' }]}>
-                Waiting for {gig.posterName} to confirm and pay...
+          {/* Status banners */}
+          {(gig.status === 'accepted' || gig.status === 'completed') && gig.acceptedBy && !isPendingConfirmation && (
+            <View style={[styles.statusBanner, { backgroundColor: colors.successLight }]}>
+              <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+              <Text style={[styles.statusBannerText, { color: colors.success }]}>
+                {gig.status === 'completed' ? 'Completed by' : 'Accepted by'} {gig.acceptedBy}
               </Text>
             </View>
           )}
 
-          {(gig.status === 'accepted' || gig.status === 'completed') && gig.acceptedBy && (
-            <View style={[styles.acceptedBanner, { backgroundColor: colors.successLight }]}>
-              <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-              <Text style={[styles.acceptedBannerText, { color: colors.success }]}>
-                {gig.status === 'completed' ? 'Completed by' : 'Accepted by'} {gig.acceptedBy}
+          {isPendingConfirmation && !isDisputed && (
+            <View style={[styles.statusBanner, { backgroundColor: '#fef3c7' }]}>
+              <Ionicons name="hourglass-outline" size={18} color="#d97706" />
+              <Text style={[styles.statusBannerText, { color: '#d97706' }]}>
+                {isPoster
+                  ? `${gig.acceptedBy} marked this gig as complete. Please confirm or dispute.`
+                  : `Waiting for ${gig.posterName} to confirm completion...`}
+              </Text>
+            </View>
+          )}
+
+          {isDisputed && (
+            <View style={[styles.statusBanner, { backgroundColor: '#fee2e2' }]}>
+              <Ionicons name="alert-circle" size={18} color="#ef4444" />
+              <Text style={[styles.statusBannerText, { color: '#ef4444' }]}>
+                This gig is under dispute. Auto-release has been paused.
+              </Text>
+            </View>
+          )}
+
+          {isPendingConfirmation && !isDisputed && autoReleaseSeconds != null && autoReleaseSeconds > 0 && (
+            <View style={[styles.statusBanner, { backgroundColor: colors.warningLight }]}>
+              <Ionicons name="timer-outline" size={18} color={colors.warning} />
+              <Text style={[styles.statusBannerText, { color: colors.warning }]}>
+                Auto-release in {formatCountdown(autoReleaseSeconds)}
               </Text>
             </View>
           )}
@@ -97,37 +132,75 @@ export default function GigDetailModal({ gig, visible, onClose, onAccept, onComp
           )}
         </ScrollView>
 
-        {isOpen && onAccept && (
+        {/* ── Footer Buttons (role-conditional) ── */}
+
+        {/* Worker: Accept open gig */}
+        {isOpen && !isPoster && onAccept && (
           <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.bg }]}>
             <Pressable
               onPress={onAccept}
               style={({ pressed }) => [
-                styles.acceptBtn,
+                styles.actionBtn,
                 { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 },
               ]}
             >
               <Ionicons name="checkmark-circle-outline" size={20} color={isDark ? '#0f1117' : '#fff'} />
-              <Text style={[styles.acceptBtnText, { color: isDark ? '#0f1117' : '#fff' }]}>
+              <Text style={[styles.actionBtnText, { color: isDark ? '#0f1117' : '#fff' }]}>
                 Accept This Gig
               </Text>
             </Pressable>
           </View>
         )}
 
-        {gig.status === 'accepted' && onComplete && (
+        {/* Worker: Mark as Complete */}
+        {gig.status === 'accepted' && isWorker && onComplete && gig.completionStatus !== 'pending_confirmation' && (
           <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.bg }]}>
             <Pressable
               onPress={onComplete}
               style={({ pressed }) => [
-                styles.acceptBtn,
+                styles.actionBtn,
                 { backgroundColor: colors.success, opacity: pressed ? 0.85 : 1 },
               ]}
             >
               <Ionicons name="checkmark-done-outline" size={20} color="#fff" />
-              <Text style={[styles.acceptBtnText, { color: '#fff' }]}>
+              <Text style={[styles.actionBtnText, { color: '#fff' }]}>
                 Mark as Complete
               </Text>
             </Pressable>
+          </View>
+        )}
+
+        {/* Poster: Confirm & Release + Dispute */}
+        {isPoster && isPendingConfirmation && !isDisputed && (onConfirm || onDispute) && (
+          <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.bg, gap: 10 }]}>
+            {onConfirm && (
+              <Pressable
+                onPress={onConfirm}
+                style={({ pressed }) => [
+                  styles.actionBtn,
+                  { backgroundColor: colors.success, opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Ionicons name="thumbs-up-outline" size={20} color="#fff" />
+                <Text style={[styles.actionBtnText, { color: '#fff' }]}>
+                  Confirm & Release Payment
+                </Text>
+              </Pressable>
+            )}
+            {onDispute && (
+              <Pressable
+                onPress={onDispute}
+                style={({ pressed }) => [
+                  styles.actionBtn,
+                  { backgroundColor: '#ef4444', opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Ionicons name="alert-circle-outline" size={20} color="#fff" />
+                <Text style={[styles.actionBtnText, { color: '#fff' }]}>
+                  Dispute
+                </Text>
+              </Pressable>
+            )}
           </View>
         )}
       </View>
@@ -146,6 +219,15 @@ function InfoRow({ icon, label, value }: { icon: string; label: string; value: s
       <Text style={[styles.infoValue, { color: colors.text }]}>{value}</Text>
     </View>
   );
+}
+
+function formatCountdown(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
 }
 
 const styles = StyleSheet.create({
@@ -230,7 +312,7 @@ const styles = StyleSheet.create({
     height: 1,
     marginHorizontal: 14,
   },
-  acceptedBanner: {
+  statusBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -238,9 +320,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginTop: 20,
   },
-  acceptedBannerText: {
+  statusBannerText: {
     fontSize: 14,
     fontWeight: '600',
+    flex: 1,
   },
   paymentSection: {
     marginTop: 20,
@@ -255,7 +338,7 @@ const styles = StyleSheet.create({
     paddingBottom: 36,
     borderTopWidth: 1,
   },
-  acceptBtn: {
+  actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -263,7 +346,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 12,
   },
-  acceptBtnText: {
+  actionBtnText: {
     fontSize: 16,
     fontWeight: '700',
   },

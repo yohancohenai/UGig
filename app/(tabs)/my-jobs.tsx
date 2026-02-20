@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -16,23 +16,60 @@ import GigDetailModal from '../../components/GigDetailModal';
 import ReviewModal from '../../components/ReviewModal';
 import EmptyState from '../../components/EmptyState';
 
-type Tab = 'active' | 'completed';
+type Tab = 'active' | 'completed' | 'posted';
 
 export default function MyJobsScreen() {
   const { colors } = useTheme();
-  const { myAcceptedGigs } = useUser();
+  const { myAcceptedGigs, myPostedGigs } = useUser();
   const { totalEarnedCents, totalEscrowCents } = usePayment();
   const { hasReviewed, submitReview } = useReview();
-  const { completeGig } = useGigFlow();
+  const { markComplete, confirmCompletion, openDispute, getAutoReleaseRemaining } = useGigFlow();
   const { balanceCents } = useWallet();
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('active');
   const [selectedGig, setSelectedGig] = useState<Gig | null>(null);
   const [reviewGig, setReviewGig] = useState<Gig | null>(null);
+  const [autoReleaseSecs, setAutoReleaseSecs] = useState<number | null>(null);
 
-  const activeGigs = myAcceptedGigs.filter(g => g.status === 'accepted' || g.status === 'pending');
+  // Update auto-release countdown every second when a gig is selected
+  useEffect(() => {
+    if (!selectedGig || selectedGig.completionStatus !== 'pending_confirmation') {
+      setAutoReleaseSecs(null);
+      return;
+    }
+    const tick = () => setAutoReleaseSecs(getAutoReleaseRemaining(selectedGig.id));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [selectedGig, getAutoReleaseRemaining]);
+
+  const activeGigs = myAcceptedGigs.filter(g => g.status === 'accepted');
   const completedGigs = myAcceptedGigs.filter(g => g.status === 'completed');
-  const gigs = tab === 'active' ? activeGigs : completedGigs;
+
+  const getTabGigs = () => {
+    if (tab === 'active') return activeGigs;
+    if (tab === 'completed') return completedGigs;
+    return myPostedGigs;
+  };
+  const gigs = getTabGigs();
+
+  const renderGigAction = (item: Gig) => {
+    if (tab === 'posted') {
+      // Poster actions
+      if (item.completionStatus === 'pending_confirmation' && item.disputeStatus !== 'disputed') {
+        return { label: 'Confirm', action: () => { confirmCompletion(item.id); } };
+      }
+      return { label: undefined, action: undefined };
+    }
+
+    // Worker actions
+    const canComplete = item.status === 'accepted' && item.completionStatus !== 'pending_confirmation';
+    const canReview = item.status === 'completed' && !hasReviewed(item.id, CURRENT_USER.id);
+
+    if (canComplete) return { label: 'Mark Complete', action: () => markComplete(item.id) };
+    if (canReview) return { label: 'Leave Review', action: () => setReviewGig(item) };
+    return { label: undefined, action: undefined };
+  };
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.bg }]}>
@@ -70,42 +107,29 @@ export default function MyJobsScreen() {
       {/* Tabs */}
       <View style={styles.tabContainer}>
         <View style={[styles.tabBar, { borderColor: colors.borderLight }]}>
-          <Pressable
-            onPress={() => setTab('active')}
-            style={[
-              styles.tabBtn,
-              tab === 'active'
-                ? { backgroundColor: colors.primary }
-                : { backgroundColor: colors.surface },
-            ]}
-          >
-            <Text
+          {(['active', 'completed', 'posted'] as Tab[]).map(t => (
+            <Pressable
+              key={t}
+              onPress={() => setTab(t)}
               style={[
-                styles.tabText,
-                { color: tab === 'active' ? '#fff' : colors.textSecondary },
+                styles.tabBtn,
+                tab === t
+                  ? { backgroundColor: colors.primary }
+                  : { backgroundColor: colors.surface },
               ]}
             >
-              Active ({activeGigs.length})
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setTab('completed')}
-            style={[
-              styles.tabBtn,
-              tab === 'completed'
-                ? { backgroundColor: colors.primary }
-                : { backgroundColor: colors.surface },
-            ]}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                { color: tab === 'completed' ? '#fff' : colors.textSecondary },
-              ]}
-            >
-              Completed ({completedGigs.length})
-            </Text>
-          </Pressable>
+              <Text
+                style={[
+                  styles.tabText,
+                  { color: tab === t ? '#fff' : colors.textSecondary },
+                ]}
+              >
+                {t === 'active' ? `Active (${activeGigs.length})`
+                  : t === 'completed' ? `Done (${completedGigs.length})`
+                    : `Posted (${myPostedGigs.length})`}
+              </Text>
+            </Pressable>
+          ))}
         </View>
       </View>
 
@@ -115,33 +139,29 @@ export default function MyJobsScreen() {
         keyExtractor={item => item.id}
         contentContainerStyle={styles.list}
         renderItem={({ item }) => {
-          const canComplete = item.status === 'accepted';
-          const canReview =
-            item.status === 'completed' && !hasReviewed(item.id, CURRENT_USER.id);
+          const { label, action } = renderGigAction(item);
           return (
             <GigCard
               gig={item}
               onPress={() => setSelectedGig(item)}
               showPoster
-              actionLabel={canComplete ? 'Mark Complete' : canReview ? 'Leave Review' : undefined}
-              onAction={
-                canComplete
-                  ? () => completeGig(item.id)
-                  : canReview
-                    ? () => setReviewGig(item)
-                    : undefined
-              }
+              actionLabel={label}
+              onAction={action}
             />
           );
         }}
         ListEmptyComponent={
           <EmptyState
-            icon={tab === 'active' ? 'briefcase-outline' : 'checkmark-done-outline'}
-            title={tab === 'active' ? 'No active jobs' : 'No completed jobs'}
+            icon={tab === 'active' ? 'briefcase-outline' : tab === 'completed' ? 'checkmark-done-outline' : 'create-outline'}
+            title={
+              tab === 'active' ? 'No active jobs'
+                : tab === 'completed' ? 'No completed jobs'
+                  : 'No posted gigs'
+            }
             message={
-              tab === 'active'
-                ? 'Browse gigs and accept one to get started.'
-                : 'Jobs you finish will show up here.'
+              tab === 'active' ? 'Browse gigs and accept one to get started.'
+                : tab === 'completed' ? 'Jobs you finish will show up here.'
+                  : 'Post a gig to find students who can help.'
             }
           />
         }
@@ -151,9 +171,27 @@ export default function MyJobsScreen() {
         gig={selectedGig}
         visible={!!selectedGig}
         onClose={() => setSelectedGig(null)}
+        autoReleaseSeconds={autoReleaseSecs}
+        onAccept={undefined}
         onComplete={
           selectedGig?.status === 'accepted'
-            ? () => { completeGig(selectedGig.id); setSelectedGig(null); }
+            && selectedGig?.acceptedById === CURRENT_USER.id
+            && selectedGig?.completionStatus !== 'pending_confirmation'
+            ? () => { markComplete(selectedGig.id); setSelectedGig(null); }
+            : undefined
+        }
+        onConfirm={
+          selectedGig?.posterId === CURRENT_USER.id
+            && selectedGig?.completionStatus === 'pending_confirmation'
+            && selectedGig?.disputeStatus !== 'disputed'
+            ? () => { confirmCompletion(selectedGig.id); setSelectedGig(null); }
+            : undefined
+        }
+        onDispute={
+          selectedGig?.posterId === CURRENT_USER.id
+            && selectedGig?.completionStatus === 'pending_confirmation'
+            && selectedGig?.disputeStatus !== 'disputed'
+            ? () => { openDispute(selectedGig.id); setSelectedGig(null); }
             : undefined
         }
       />

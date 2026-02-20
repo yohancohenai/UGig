@@ -6,6 +6,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useUser } from '../../context/UserContext';
 import { useGigFlow } from '../../context/GigFlowContext';
 import { useVerification } from '../../context/VerificationContext';
+import { CURRENT_USER } from '../../constants/MockData';
 import type { Gig } from '../../constants/MockData';
 import GigCard from '../../components/GigCard';
 import GigDetailModal from '../../components/GigDetailModal';
@@ -22,9 +23,11 @@ export default function BrowseScreen() {
   const [selectedGig, setSelectedGig] = useState<Gig | null>(null);
 
   const filteredGigs = useMemo(() => {
-    if (!search.trim()) return openCampusGigs;
+    // Exclude gigs posted by the current user (can't accept your own gig)
+    let gigs = openCampusGigs.filter(g => g.posterId !== CURRENT_USER.id);
+    if (!search.trim()) return gigs;
     const q = search.toLowerCase();
-    return openCampusGigs.filter(
+    return gigs.filter(
       g =>
         g.title.toLowerCase().includes(q) ||
         g.description.toLowerCase().includes(q) ||

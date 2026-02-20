@@ -46,6 +46,16 @@ export default function GigCard({ gig, onPress, actionLabel, onAction, showPoste
             <Text style={[styles.badgeText, { color: sc.text }]}>{statusLabel}</Text>
           </View>
           {gig.payment && <PaymentBadge status={gig.payment.status} />}
+          {gig.completionStatus === 'pending_confirmation' && (
+            <View style={[styles.badge, { backgroundColor: '#fef3c7' }]}>
+              <Text style={[styles.badgeText, { color: '#d97706' }]}>AWAITING CONFIRM</Text>
+            </View>
+          )}
+          {gig.disputeStatus === 'disputed' && (
+            <View style={[styles.badge, { backgroundColor: '#fee2e2' }]}>
+              <Text style={[styles.badgeText, { color: '#ef4444' }]}>DISPUTED</Text>
+            </View>
+          )}
         </View>
       </View>
 

@@ -18,7 +18,12 @@ const NOTIF_ICONS: Record<NotificationType, { name: string; color: string }> = {
   new_gig: { name: 'megaphone-outline', color: '#0891b2' },
   withdrawal: { name: 'arrow-down-circle', color: '#6366f1' },
   verification_complete: { name: 'shield-checkmark', color: '#16a34a' },
-  id_verified: { name: 'id-card', color: '#4f46e5' },
+  id_verified: { name: 'id-card', color: '#6366f1' },
+  gig_funded: { name: 'card-outline', color: '#635bff' },
+  completion_requested: { name: 'hourglass', color: '#d97706' },
+  completion_confirmed: { name: 'checkmark-done-circle', color: '#16a34a' },
+  auto_released: { name: 'timer-outline', color: '#d97706' },
+  dispute_opened: { name: 'alert-circle', color: '#ef4444' },
 };
 
 export default function NotificationModal({ visible, onClose }: NotificationModalProps) {

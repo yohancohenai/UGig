@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { StripeProvider } from '@stripe/stripe-react-native';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { UserProvider } from '../context/UserContext';
 import { PaymentProvider } from '../context/PaymentContext';
@@ -8,6 +9,8 @@ import { WalletProvider } from '../context/WalletContext';
 import { VerificationProvider } from '../context/VerificationContext';
 import { GigFlowProvider } from '../context/GigFlowContext';
 import { ReviewProvider } from '../context/ReviewContext';
+
+const STRIPE_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
 
 function RootLayoutInner() {
   const { isDark, colors } = useTheme();
@@ -31,22 +34,24 @@ function RootLayoutInner() {
 
 export default function RootLayout() {
   return (
-    <ThemeProvider>
-      <UserProvider>
-        <PaymentProvider>
-          <NotificationProvider>
-            <VerificationProvider>
-              <WalletProvider>
-                <GigFlowProvider>
-                  <ReviewProvider>
-                    <RootLayoutInner />
-                  </ReviewProvider>
-                </GigFlowProvider>
-              </WalletProvider>
-            </VerificationProvider>
-          </NotificationProvider>
-        </PaymentProvider>
-      </UserProvider>
-    </ThemeProvider>
+    <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY}>
+      <ThemeProvider>
+        <UserProvider>
+          <PaymentProvider>
+            <NotificationProvider>
+              <VerificationProvider>
+                <WalletProvider>
+                  <GigFlowProvider>
+                    <ReviewProvider>
+                      <RootLayoutInner />
+                    </ReviewProvider>
+                  </GigFlowProvider>
+                </WalletProvider>
+              </VerificationProvider>
+            </NotificationProvider>
+          </PaymentProvider>
+        </UserProvider>
+      </ThemeProvider>
+    </StripeProvider>
   );
 }

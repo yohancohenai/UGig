@@ -1,4 +1,7 @@
 export type PaymentStatus = 'pending' | 'in_escrow' | 'released' | 'refunded';
+export type EscrowStatus = 'unfunded' | 'in_escrow' | 'released' | 'disputed' | 'refunded';
+export type CompletionStatus = 'not_started' | 'pending_confirmation' | 'confirmed';
+export type DisputeStatus = 'none' | 'disputed' | 'resolved';
 
 export interface Payment {
   id: string;
@@ -7,6 +10,9 @@ export interface Payment {
   serviceFeeCents: number;
   netPayoutCents: number;
   status: PaymentStatus;
+  paymentIntentId?: string;
+  transferId?: string;
+  connectedAccountId?: string;
   createdAt: string;
 }
 
@@ -19,9 +25,15 @@ export interface Gig {
   location: string;
   status: 'open' | 'pending' | 'accepted' | 'completed';
   posterName: string;
+  posterId: string;
   posterSchool: string;
   acceptedBy?: string;
+  acceptedById?: string;
   payment?: Payment;
+  paymentIntentId?: string;
+  escrowStatus?: EscrowStatus;
+  completionStatus?: CompletionStatus;
+  disputeStatus?: DisputeStatus;
   createdAt: string;
 }
 
@@ -31,6 +43,23 @@ export const PLATFORM_FEE_PERCENT = 10;
 /** Helper: format cents to dollar string */
 export function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
+}
+
+/** Check if a user is the poster of a gig */
+export function isGigPoster(gig: Gig, userId: string): boolean {
+  return gig.posterId === userId;
+}
+
+/** Check if a user is the worker on a gig */
+export function isGigWorker(gig: Gig, userId: string): boolean {
+  return gig.acceptedById === userId;
+}
+
+/** Parse a pay string like "$20/hr", "$50 flat", "$12/walk" to cents */
+export function parsePayToCents(pay: string): number {
+  const match = pay.match(/\$(\d+)/);
+  if (!match) return 2000;
+  return parseInt(match[1], 10) * 100;
 }
 
 export interface Review {
@@ -54,7 +83,10 @@ export interface WalletTransaction {
   createdAt: string;
 }
 
-export type NotificationType = 'gig_accepted' | 'gig_confirmed' | 'payment_submitted' | 'payment_released' | 'gig_completed' | 'new_gig' | 'withdrawal' | 'verification_complete' | 'id_verified';
+export type NotificationType =
+  | 'gig_accepted' | 'gig_confirmed' | 'payment_submitted' | 'payment_released'
+  | 'gig_completed' | 'new_gig' | 'withdrawal' | 'verification_complete' | 'id_verified'
+  | 'gig_funded' | 'completion_requested' | 'completion_confirmed' | 'auto_released' | 'dispute_opened';
 
 export type IdVerificationStatus = 'none' | 'pending' | 'approved' | 'rejected';
 
@@ -77,6 +109,8 @@ export interface User {
   collegeId: string;
   emailVerified: boolean;
   idVerificationStatus: IdVerificationStatus;
+  stripeAccountId?: string;
+  stripeOnboarded?: boolean;
 }
 
 export const CURRENT_USER: User = {
@@ -86,7 +120,7 @@ export const CURRENT_USER: User = {
   role: 'worker',
   school: 'University of Florida',
   collegeId: 'uf',
-  emailVerified: false,
+  emailVerified: true,
   idVerificationStatus: 'none',
 };
 
@@ -156,6 +190,13 @@ export const MOCK_REVIEWS: Review[] = [
   },
 ];
 
+/** Helper to build mock payment objects for pre-funded gigs */
+function mockPayment(id: string, gigId: string, pay: string, date: string, status: PaymentStatus = 'in_escrow'): Payment {
+  const amountCents = parsePayToCents(pay);
+  const serviceFeeCents = Math.round(amountCents * PLATFORM_FEE_PERCENT / 100);
+  return { id, gigId, amountCents, serviceFeeCents, netPayoutCents: amountCents - serviceFeeCents, status, paymentIntentId: `pi_mock_${gigId}`, createdAt: date };
+}
+
 export const MOCK_GIGS: Gig[] = [
   // ── University of Florida gigs ──
   {
@@ -167,7 +208,13 @@ export const MOCK_GIGS: Gig[] = [
     location: 'Rawlings Hall',
     status: 'open',
     posterName: 'Alice Chen',
+    posterId: 'alice_chen',
     posterSchool: 'University of Florida',
+    escrowStatus: 'in_escrow',
+    paymentIntentId: 'pi_mock_1',
+    completionStatus: 'not_started',
+    disputeStatus: 'none',
+    payment: mockPayment('pay_m1', '1', '$20/hr', '2026-02-17'),
     createdAt: '2026-02-17',
   },
   {
@@ -179,7 +226,13 @@ export const MOCK_GIGS: Gig[] = [
     location: 'Admissions Office, Criser Hall',
     status: 'open',
     posterName: 'Marcus Thompson',
+    posterId: 'marcus_thompson',
     posterSchool: 'University of Florida',
+    escrowStatus: 'in_escrow',
+    paymentIntentId: 'pi_mock_2',
+    completionStatus: 'not_started',
+    disputeStatus: 'none',
+    payment: mockPayment('pay_m2', '2', '$15/hr', '2026-02-16'),
     createdAt: '2026-02-16',
   },
   {
@@ -191,7 +244,13 @@ export const MOCK_GIGS: Gig[] = [
     location: 'Reitz Union Ballroom',
     status: 'open',
     posterName: 'Priya Patel',
+    posterId: 'priya_patel',
     posterSchool: 'University of Florida',
+    escrowStatus: 'in_escrow',
+    paymentIntentId: 'pi_mock_3',
+    completionStatus: 'not_started',
+    disputeStatus: 'none',
+    payment: mockPayment('pay_m3', '3', '$50 flat', '2026-02-15'),
     createdAt: '2026-02-15',
   },
   {
@@ -203,7 +262,13 @@ export const MOCK_GIGS: Gig[] = [
     location: 'Library West, Study Room 4',
     status: 'open',
     posterName: 'Tyler Brooks',
+    posterId: 'tyler_brooks',
     posterSchool: 'University of Florida',
+    escrowStatus: 'in_escrow',
+    paymentIntentId: 'pi_mock_4',
+    completionStatus: 'not_started',
+    disputeStatus: 'none',
+    payment: mockPayment('pay_m4', '4', '$25/hr', '2026-02-14'),
     createdAt: '2026-02-14',
   },
   {
@@ -215,7 +280,13 @@ export const MOCK_GIGS: Gig[] = [
     location: 'Wertheim Lab Lobby',
     status: 'open',
     posterName: 'Sara Kim',
+    posterId: 'sara_kim',
     posterSchool: 'University of Florida',
+    escrowStatus: 'in_escrow',
+    paymentIntentId: 'pi_mock_5',
+    completionStatus: 'not_started',
+    disputeStatus: 'none',
+    payment: mockPayment('pay_m5', '5', '$75 flat', '2026-02-13'),
     createdAt: '2026-02-13',
   },
   {
@@ -227,8 +298,14 @@ export const MOCK_GIGS: Gig[] = [
     location: 'Campus Lodge Apartments',
     status: 'accepted',
     posterName: 'Emily Watson',
+    posterId: 'emily_watson',
     posterSchool: 'University of Florida',
     acceptedBy: 'Jordan Rivera',
+    acceptedById: '1',
+    escrowStatus: 'in_escrow',
+    paymentIntentId: 'pi_mock_6',
+    completionStatus: 'not_started',
+    disputeStatus: 'none',
     payment: {
       id: 'pay_1',
       gigId: '6',
@@ -236,6 +313,7 @@ export const MOCK_GIGS: Gig[] = [
       serviceFeeCents: 120,
       netPayoutCents: 1080,
       status: 'in_escrow',
+      paymentIntentId: 'pi_mock_6',
       createdAt: '2026-02-10',
     },
     createdAt: '2026-02-10',
@@ -249,8 +327,14 @@ export const MOCK_GIGS: Gig[] = [
     location: 'Remote / Digital',
     status: 'completed',
     posterName: 'David Park',
+    posterId: 'david_park',
     posterSchool: 'University of Florida',
     acceptedBy: 'Jordan Rivera',
+    acceptedById: '1',
+    escrowStatus: 'released',
+    paymentIntentId: 'pi_mock_7',
+    completionStatus: 'confirmed',
+    disputeStatus: 'none',
     payment: {
       id: 'pay_2',
       gigId: '7',
@@ -258,6 +342,7 @@ export const MOCK_GIGS: Gig[] = [
       serviceFeeCents: 300,
       netPayoutCents: 2700,
       status: 'released',
+      paymentIntentId: 'pi_mock_7',
       createdAt: '2026-02-08',
     },
     createdAt: '2026-02-08',
@@ -270,10 +355,26 @@ export const MOCK_GIGS: Gig[] = [
     description: 'Need someone to pick up my laundry from Broward Hall and drop it off at the laundromat on University Ave. About 1 hour total.',
     pay: '$18 flat',
     location: 'Broward Hall',
-    status: 'pending',
+    status: 'accepted',
     posterName: 'Sam Williams',
+    posterId: 'sam_williams',
     posterSchool: 'University of Florida',
     acceptedBy: 'Jordan Rivera',
+    acceptedById: '1',
+    escrowStatus: 'in_escrow',
+    paymentIntentId: 'pi_mock_15',
+    completionStatus: 'not_started',
+    disputeStatus: 'none',
+    payment: {
+      id: 'pay_3',
+      gigId: '15',
+      amountCents: 1800,
+      serviceFeeCents: 180,
+      netPayoutCents: 1620,
+      status: 'in_escrow',
+      paymentIntentId: 'pi_mock_15',
+      createdAt: '2026-02-17',
+    },
     createdAt: '2026-02-17',
   },
 
@@ -287,7 +388,13 @@ export const MOCK_GIGS: Gig[] = [
     location: 'Strozier Library Cafe',
     status: 'open',
     posterName: 'Nora Finch',
+    posterId: 'nora_finch',
     posterSchool: 'Florida State University',
+    escrowStatus: 'in_escrow',
+    paymentIntentId: 'pi_mock_8',
+    completionStatus: 'not_started',
+    disputeStatus: 'none',
+    payment: mockPayment('pay_m8', '8', '$14/hr', '2026-02-17'),
     createdAt: '2026-02-17',
   },
   {
@@ -299,7 +406,13 @@ export const MOCK_GIGS: Gig[] = [
     location: 'Diffenbaugh Building, Room 210',
     status: 'open',
     posterName: 'Leo Chang',
+    posterId: 'leo_chang',
     posterSchool: 'Florida State University',
+    escrowStatus: 'in_escrow',
+    paymentIntentId: 'pi_mock_9',
+    completionStatus: 'not_started',
+    disputeStatus: 'none',
+    payment: mockPayment('pay_m9', '9', '$100 flat', '2026-02-14'),
     createdAt: '2026-02-14',
   },
   {
@@ -311,7 +424,13 @@ export const MOCK_GIGS: Gig[] = [
     location: 'Dick Howser Stadium',
     status: 'open',
     posterName: 'Coach Williams',
+    posterId: 'coach_williams',
     posterSchool: 'Florida State University',
+    escrowStatus: 'in_escrow',
+    paymentIntentId: 'pi_mock_10',
+    completionStatus: 'not_started',
+    disputeStatus: 'none',
+    payment: mockPayment('pay_m10', '10', '$16/hr', '2026-02-12'),
     createdAt: '2026-02-12',
   },
 
@@ -325,7 +444,13 @@ export const MOCK_GIGS: Gig[] = [
     location: 'John C. Hitt Library, 2nd Floor',
     status: 'open',
     posterName: 'Mia Santos',
+    posterId: 'mia_santos',
     posterSchool: 'University of Central Florida',
+    escrowStatus: 'in_escrow',
+    paymentIntentId: 'pi_mock_11',
+    completionStatus: 'not_started',
+    disputeStatus: 'none',
+    payment: mockPayment('pay_m11', '11', '$22/hr', '2026-02-16'),
     createdAt: '2026-02-16',
   },
   {
@@ -337,7 +462,13 @@ export const MOCK_GIGS: Gig[] = [
     location: 'Recreation & Wellness Center',
     status: 'open',
     posterName: 'Jake Morales',
+    posterId: 'jake_morales',
     posterSchool: 'University of Central Florida',
+    escrowStatus: 'in_escrow',
+    paymentIntentId: 'pi_mock_12',
+    completionStatus: 'not_started',
+    disputeStatus: 'none',
+    payment: mockPayment('pay_m12', '12', '$18/hr', '2026-02-13'),
     createdAt: '2026-02-13',
   },
 
@@ -351,7 +482,13 @@ export const MOCK_GIGS: Gig[] = [
     location: 'Remote / Digital',
     status: 'open',
     posterName: 'Andrea Lopez',
+    posterId: 'andrea_lopez',
     posterSchool: 'Florida International University',
+    escrowStatus: 'in_escrow',
+    paymentIntentId: 'pi_mock_13',
+    completionStatus: 'not_started',
+    disputeStatus: 'none',
+    payment: mockPayment('pay_m13', '13', '$60 flat', '2026-02-15'),
     createdAt: '2026-02-15',
   },
   {
@@ -363,7 +500,13 @@ export const MOCK_GIGS: Gig[] = [
     location: 'Key Biscayne Beach',
     status: 'open',
     posterName: 'Carlos Vega',
+    posterId: 'carlos_vega',
     posterSchool: 'Florida International University',
+    escrowStatus: 'in_escrow',
+    paymentIntentId: 'pi_mock_14',
+    completionStatus: 'not_started',
+    disputeStatus: 'none',
+    payment: mockPayment('pay_m14', '14', '$40 flat', '2026-02-11'),
     createdAt: '2026-02-11',
   },
 ];

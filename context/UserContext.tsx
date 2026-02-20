@@ -2,30 +2,27 @@ import React, { createContext, useContext, useState, useMemo, useCallback, useRe
 import { CURRENT_USER, MOCK_GIGS, User, Gig } from '../constants/MockData';
 import type { Payment } from '../constants/MockData';
 import { College, getCollegeById } from '../constants/Colleges';
+import { useTheme } from './ThemeContext';
 
 interface UserContextValue {
   user: User;
   college: College | undefined;
   isOnboarded: boolean;
-  /** All gigs (mutable state) */
   allGigs: Gig[];
-  /** All gigs scoped to the user's college */
   campusGigs: Gig[];
-  /** Open gigs on the user's campus */
   openCampusGigs: Gig[];
-  /** Gigs the current user has accepted/pending/completed */
   myAcceptedGigs: Gig[];
+  myPostedGigs: Gig[];
   selectCollege: (collegeId: string) => void;
   resetCollege: () => void;
-  /** Update a gig's fields in state */
   updateGig: (gigId: string, updates: Partial<Gig>) => void;
-  /** Add a new gig to state, returns the generated ID */
   addGig: (gig: Omit<Gig, 'id'>) => string;
 }
 
 const UserContext = createContext<UserContextValue | null>(null);
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
+  const { setAccent } = useTheme();
   const [collegeId, setCollegeId] = useState<string | null>(null);
   const [gigs, setGigs] = useState<Gig[]>(MOCK_GIGS);
   const nextIdRef = useRef(100);
@@ -60,6 +57,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     [gigs, user.name]
   );
 
+  const myPostedGigs = useMemo(
+    () => gigs.filter(g => g.posterId === user.id),
+    [gigs, user.id]
+  );
+
   const updateGig = useCallback((gigId: string, updates: Partial<Gig>) => {
     setGigs(prev => prev.map(g => g.id === gigId ? { ...g, ...updates } : g));
   }, []);
@@ -70,8 +72,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     return id;
   }, []);
 
-  const selectCollege = useCallback((id: string) => setCollegeId(id), []);
-  const resetCollege = useCallback(() => setCollegeId(null), []);
+  const selectCollege = useCallback((id: string) => {
+    setCollegeId(id);
+    const c = getCollegeById(id);
+    if (c) setAccent(c.accent);
+  }, [setAccent]);
+
+  const resetCollege = useCallback(() => {
+    setCollegeId(null);
+    setAccent(null);
+  }, [setAccent]);
 
   const value = useMemo(
     () => ({
@@ -82,12 +92,13 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       campusGigs,
       openCampusGigs,
       myAcceptedGigs,
+      myPostedGigs,
       selectCollege,
       resetCollege,
       updateGig,
       addGig,
     }),
-    [user, college, collegeId, gigs, campusGigs, openCampusGigs, myAcceptedGigs, selectCollege, resetCollege, updateGig, addGig]
+    [user, college, collegeId, gigs, campusGigs, openCampusGigs, myAcceptedGigs, myPostedGigs, selectCollege, resetCollege, updateGig, addGig]
   );
 
   return (
