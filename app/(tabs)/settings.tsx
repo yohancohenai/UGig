@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable, Switch, Alert } from 're
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import { useUser } from '../../context/UserContext';
 import { useWallet } from '../../context/WalletContext';
 import { useReview } from '../../context/ReviewContext';
@@ -16,6 +17,7 @@ import IdVerificationModal from '../../components/IdVerificationModal';
 
 export default function SettingsScreen() {
   const { colors, isDark, mode, toggle, setMode } = useTheme();
+  const { signOut, resetAll } = useAuth();
   const { user, college, resetCollege } = useUser();
   const { balanceCents } = useWallet();
   const { getAverageRating, getReviewCount } = useReview();
@@ -45,9 +47,46 @@ export default function SettingsScreen() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Change',
-          onPress: () => {
-            resetCollege();
-            router.replace('/onboarding');
+          onPress: async () => {
+            await resetCollege();
+            router.replace('/(onboarding)/college-select');
+          },
+        },
+      ]
+    );
+  };
+
+  const handleSignOut = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            await signOut();
+            router.replace('/');
+          },
+        },
+      ]
+    );
+  };
+
+  const handleResetOnboarding = () => {
+    Alert.alert(
+      'Reset Onboarding',
+      'This will clear all persisted state and restart the app flow.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            await resetAll();
+            await resetCollege();
+            router.replace('/');
           },
         },
       ]
@@ -249,9 +288,25 @@ export default function SettingsScreen() {
         <SettingLink icon="document-text-outline" label="Terms of Service" onPress={comingSoon} />
       </View>
 
+      {/* Developer */}
+      {__DEV__ && (
+        <>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Developer</Text>
+          <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Pressable onPress={handleResetOnboarding} style={styles.settingRow}>
+              <View style={styles.settingLabel}>
+                <Ionicons name="refresh-outline" size={20} color={colors.warning} />
+                <Text style={[styles.settingText, { color: colors.text }]}>Reset Onboarding</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+            </Pressable>
+          </View>
+        </>
+      )}
+
       {/* Sign Out */}
       <Pressable
-        onPress={() => Alert.alert('Signed Out', 'You have been signed out.')}
+        onPress={handleSignOut}
         style={({ pressed }) => [
           styles.signOutBtn,
           { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },

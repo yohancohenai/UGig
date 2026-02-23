@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
+import { AuthProvider } from '../context/AuthContext';
 import { UserProvider } from '../context/UserContext';
 import { PaymentProvider } from '../context/PaymentContext';
 import { NotificationProvider } from '../context/NotificationContext';
@@ -25,7 +26,9 @@ function RootLayoutInner() {
           animation: 'slide_from_right',
         }}
       >
-        <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
+        <Stack.Screen name="index" />
+        <Stack.Screen name="(onboarding)" options={{ animation: 'fade' }} />
+        <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
       </Stack>
     </>
@@ -36,21 +39,23 @@ export default function RootLayout() {
   return (
     <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY}>
       <ThemeProvider>
-        <UserProvider>
-          <PaymentProvider>
-            <NotificationProvider>
-              <VerificationProvider>
-                <WalletProvider>
-                  <GigFlowProvider>
-                    <ReviewProvider>
-                      <RootLayoutInner />
-                    </ReviewProvider>
-                  </GigFlowProvider>
-                </WalletProvider>
-              </VerificationProvider>
-            </NotificationProvider>
-          </PaymentProvider>
-        </UserProvider>
+        <AuthProvider>
+          <UserProvider>
+            <PaymentProvider>
+              <NotificationProvider>
+                <VerificationProvider>
+                  <WalletProvider>
+                    <GigFlowProvider>
+                      <ReviewProvider>
+                        <RootLayoutInner />
+                      </ReviewProvider>
+                    </GigFlowProvider>
+                  </WalletProvider>
+                </VerificationProvider>
+              </NotificationProvider>
+            </PaymentProvider>
+          </UserProvider>
+        </AuthProvider>
       </ThemeProvider>
     </StripeProvider>
   );

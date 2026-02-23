@@ -1,8 +1,8 @@
 export const Colors = {
   light: {
-    primary: '#4f46e5',
-    primaryHover: '#4338ca',
-    primaryLight: '#eef2ff',
+    primary: '#19A7A8',
+    primaryHover: '#149394',
+    primaryLight: '#EDF8F8',
     success: '#16a34a',
     successLight: '#dcfce7',
     warning: '#f59e0b',
@@ -23,9 +23,9 @@ export const Colors = {
     tabBarInactive: '#9ca3af',
   },
   dark: {
-    primary: '#818cf8',
-    primaryHover: '#6366f1',
-    primaryLight: '#1e1b4b',
+    primary: '#5CC4C5',
+    primaryHover: '#42B5B6',
+    primaryLight: '#0A2E2E',
     success: '#4ade80',
     successLight: '#052e16',
     warning: '#fbbf24',
